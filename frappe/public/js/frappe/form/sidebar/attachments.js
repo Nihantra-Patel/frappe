@@ -147,13 +147,96 @@ frappe.ui.form.Attachments = class Attachments {
 			};
 		}
 
+		const view_icon = `<a class="view-icon" data-file-url="${file_url}">
+			<i class="fa ${attachment.is_private ? "fa-eye-slash" : "fa-eye"}">&nbsp;</i>
+		</a>`;
+
 		const icon = `<a href="/app/file/${fileid}">
 				${frappe.utils.icon(attachment.is_private ? "es-line-lock" : "es-line-unlock", "sm ml-0")}
 			</a>`;
+		const combinedIcons = `${view_icon} ${icon}`;
 
 		$(`<li class="attachment-row">`)
-			.append(frappe.get_data_pill(file_label, fileid, remove_action, icon))
+			.append(frappe.get_data_pill(file_label, fileid, remove_action, combinedIcons))
 			.insertAfter(this.add_attachment_wrapper);
+	
+
+		this.parent.off('click', '.view-icon').on('click', '.view-icon', function (e) {
+			e.preventDefault();
+			const fileUrl = $(this).data('file-url');
+			me.show_file_preview(fileUrl);
+		});
+	}
+
+	show_file_preview(file_url) {
+		let $preview = "";
+		const file_extension = file_url.split('.').pop().toLowerCase();
+	
+		if (frappe.utils.is_image_file(file_url)) {
+			$preview = $(`<div class="img_preview">
+				<img
+					class="img-responsive"
+					src="${frappe.utils.escape_html(file_url)}"
+					onerror="this.src='/assets/frappe/images/ui/placeholder.png';"
+				/>
+			</div>`);
+		} else if (frappe.utils.is_video_file(file_url)) {
+			$preview = $(`<div class="video_preview" style="text-align:center;">
+				<video class="preview-video" width="720" height="400" controls>
+					<source src="${frappe.utils.escape_html(file_url)}">
+					${__("Your browser does not support the video element.")}
+				</video>
+			</div>`);
+		} else if (file_extension === "pdf") {
+			$preview = $(`<div class="img_preview">
+				<object style="background:#323639;" width="100%">
+					<embed
+						style="background:#323639;"
+						width="100%"
+						height="1190"
+						src="${frappe.utils.escape_html(file_url)}" type="application/pdf"
+					>
+				</object>
+			</div>`);
+		} else if (file_extension === "mp3") {
+			$preview = $(`<div class="img_preview">
+				<audio width="480" height="60" controls>
+					<source src="${frappe.utils.escape_html(file_url)}" type="audio/mpeg">
+					${__("Your browser does not support the audio element.")}
+				</audio>
+			</div>`);
+		} else {
+			$preview = `<div>${__("No preview available for this file type.")}</div>`;
+		}
+
+		const dialog = new frappe.ui.Dialog({
+			title: __("File Preview"),
+			fields: [
+				{
+					fieldtype: "HTML",
+					fieldname: "file_preview",
+					options: $preview
+				}
+			],
+			size: 'large',
+			primary_action_label: __("Close"),
+			primary_action: function () {
+				this.hide();
+				$('.preview-video').each(function () {
+					this.pause();
+				});
+			}
+		});
+
+		dialog.show();
+
+		$(document).on('click', function (event) {
+			if (!$(event.target).closest('.modal-dialog').length) {
+				$('.preview-video').each(function () {
+					this.pause();
+				});
+			}
+		});
 	}
 
 	get_file_url(attachment) {
