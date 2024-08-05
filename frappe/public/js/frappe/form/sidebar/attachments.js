@@ -147,7 +147,7 @@ frappe.ui.form.Attachments = class Attachments {
 			};
 		}
 
-		const view_icon = `<a class="view-icon" data-file-url="${file_url}">
+		const view_icon = `<a class="view-icon" data-file-url="${file_url}" data-is-private="${attachment.is_private}">
 			<i class="fa ${attachment.is_private ? "fa-eye-slash" : "fa-eye"}">&nbsp;</i>
 		</a>`;
 
@@ -159,12 +159,17 @@ frappe.ui.form.Attachments = class Attachments {
 		$(`<li class="attachment-row">`)
 			.append(frappe.get_data_pill(file_label, fileid, remove_action, combinedIcons))
 			.insertAfter(this.add_attachment_wrapper);
-	
 
 		this.parent.off('click', '.view-icon').on('click', '.view-icon', function (e) {
 			e.preventDefault();
+			const isPrivate = $(this).data('is-private');
 			const fileUrl = $(this).data('file-url');
-			me.show_file_preview(fileUrl);
+
+			if (isPrivate) {
+				frappe.msgprint(__('This file is private and cannot be previewed.'));
+			} else {
+				me.show_file_preview(fileUrl);
+			}
 		});
 	}
 
