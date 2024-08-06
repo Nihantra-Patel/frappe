@@ -187,7 +187,7 @@ frappe.ui.form.Attachments = class Attachments {
 			</div>`);
 		} else if (frappe.utils.is_video_file(file_url)) {
 			$preview = $(`<div class="video_preview" style="text-align:center;">
-				<video class="preview-video" width="720" height="400" controls>
+				<video class="preview-video-audio" width="720" height="400" controls>
 					<source src="${frappe.utils.escape_html(file_url)}">
 					${__("Your browser does not support the video element.")}
 				</video>
@@ -204,8 +204,8 @@ frappe.ui.form.Attachments = class Attachments {
 				</object>
 			</div>`);
 		} else if (file_extension === "mp3") {
-			$preview = $(`<div class="img_preview">
-				<audio width="480" height="60" controls>
+			$preview = $(`<div class="img_preview" style="text-align:center;">
+				<audio class="preview-video-audio" width="480" height="60" controls>
 					<source src="${frappe.utils.escape_html(file_url)}" type="audio/mpeg">
 					${__("Your browser does not support the audio element.")}
 				</audio>
@@ -227,7 +227,7 @@ frappe.ui.form.Attachments = class Attachments {
 			primary_action_label: __("Close"),
 			primary_action: function () {
 				this.hide();
-				$('.preview-video').each(function () {
+				$('.preview-video-audio').each(function () {
 					this.pause();
 				});
 			}
@@ -237,7 +237,7 @@ frappe.ui.form.Attachments = class Attachments {
 
 		$(document).on('click', function (event) {
 			if (!$(event.target).closest('.modal-dialog').length) {
-				$('.preview-video').each(function () {
+				$('.preview-video-audio').each(function () {
 					this.pause();
 				});
 			}
