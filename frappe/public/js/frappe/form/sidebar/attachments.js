@@ -210,38 +210,53 @@ frappe.ui.form.Attachments = class Attachments {
 					${__("Your browser does not support the audio element.")}
 				</audio>
 			</div>`);
+		} else if (file_extension === "txt") {
+			$.get(file_url).done(function (data) {
+				$preview = $(`<div class="text_preview" style="white-space: pre-wrap;">
+					<pre>${frappe.utils.escape_html(data)}</pre>
+				</div>`);
+				renderDialog($preview);
+			}).fail(function () {
+				$preview = `<div>${__("Failed to load text file.")}</div>`;
+				renderDialog($preview);
+			});
+			return;
 		} else {
 			$preview = `<div>${__("No preview available for this file type.")}</div>`;
 		}
-
-		const dialog = new frappe.ui.Dialog({
-			title: __("File Preview"),
-			fields: [
-				{
-					fieldtype: "HTML",
-					fieldname: "file_preview",
-					options: $preview
+	
+		function renderDialog(previewContent) {
+			const dialog = new frappe.ui.Dialog({
+				title: __("File Preview"),
+				fields: [
+					{
+						fieldtype: "HTML",
+						fieldname: "file_preview",
+						options: previewContent
+					}
+				],
+				size: 'large',
+				primary_action_label: __("Close"),
+				primary_action: function () {
+					this.hide();
+					$('.preview-video-audio').each(function () {
+						this.pause();
+					});
 				}
-			],
-			size: 'large',
-			primary_action_label: __("Close"),
-			primary_action: function () {
-				this.hide();
-				$('.preview-video-audio').each(function () {
-					this.pause();
-				});
-			}
-		});
-
-		dialog.show();
-
-		$(document).on('click', function (event) {
-			if (!$(event.target).closest('.modal-dialog').length) {
-				$('.preview-video-audio').each(function () {
-					this.pause();
-				});
-			}
-		});
+			});
+	
+			dialog.show();
+	
+			$(document).on('click', function (event) {
+				if (!$(event.target).closest('.modal-dialog').length) {
+					$('.preview-video-audio').each(function () {
+						this.pause();
+					});
+				}
+			});
+		}
+	
+		renderDialog($preview);
 	}
 
 	get_file_url(attachment) {
