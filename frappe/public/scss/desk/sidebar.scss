@@ -63,6 +63,41 @@ body[data-route^="Module"] .main-menu {
 	}
 }
 
+/* CSS to make video responsive */
+.video_preview {
+	text-align: center;
+	width: 100%;
+	max-width: 100%;
+}
+
+.preview-video {
+	width: 100%;
+	max-width: 100%;
+	height: auto;
+}
+
+/* Styles for tablets and larger screens */
+@media (min-width: 768px) {
+	.preview-video {
+		width: 100%;
+		max-width: 100%;
+		height: auto;
+	}
+}
+
+/* Styles for desktops and larger screens */
+@media (min-width: 992px) {
+	.preview-video {
+		width: 720px;
+		height: 400px;
+	}
+}
+
+.img_preview {
+	text-align: center;
+}
+
+
 // form sidebar
 .form-sidebar {
 	.sidebar-menu {
