@@ -14,6 +14,7 @@ export default class NumberCardWidget extends Widget {
 			number_card_name: this.number_card_name,
 			label: this.label,
 			color: this.color,
+			background_color: this.background_color,
 			hidden: this.hidden,
 		};
 	}
@@ -26,6 +27,15 @@ export default class NumberCardWidget extends Widget {
 		this.widget.addClass("number-widget-box");
 		this.make_card();
 	}
+	apply_widget_styles() {
+		const styles = {};
+		
+		if (this.card_doc.background_color) {
+			styles["background-color"] = this.card_doc.background_color;
+		}
+		
+		this.widget.css(styles);
+	}	
 
 	make_card() {
 		frappe.model.with_doc("Number Card", this.number_card_name || this.name).then((card) => {
@@ -43,6 +53,7 @@ export default class NumberCardWidget extends Widget {
 			} else {
 				this.card_doc = card;
 				this.render_card();
+				this.apply_widget_styles();
 			}
 
 			this.set_events();
