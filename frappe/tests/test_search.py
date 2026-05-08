@@ -5,6 +5,7 @@ import re
 from contextlib import contextmanager
 from functools import partial
 from typing import Any
+from unittest.mock import patch
 
 import frappe
 from frappe.core.doctype.doctype.test_doctype import new_doctype
@@ -183,6 +184,26 @@ class TestSearch(IntegrationTestCase):
 		search = partial(search_link, doctype="Language", filters=None, page_length=10)
 		result = search(txt="(txt)")
 		self.assertEqual(result, [])
+
+	def test_no_duplicate_or_filters_for_doctype_without_name_in_search_fields(self):
+		captured_or_filters = []
+		original_get_list = frappe.get_list
+
+		def capturing_get_list(doctype, *args, **kwargs):
+			captured_or_filters.extend(kwargs.get("or_filters") or [])
+			return original_get_list(doctype, *args, **kwargs)
+
+		with patch("frappe.get_list", side_effect=capturing_get_list):
+			search_widget(doctype="ToDo", txt="testvalue123")
+
+		# Count how many times "name" appears as a filter field in or_filters
+		name_filter_count = sum(1 for f in captured_or_filters if f[1] == "name")
+		self.assertEqual(
+			name_filter_count,
+			1,
+			f"Expected exactly 1 'name' OR filter, but got {name_filter_count}. "
+			f"Duplicate OR filters cause slow full-table scans. Full or_filters: {captured_or_filters}",
+		)
 
 	def test_search_link_with_ignore_user_permissions(self):
 		"""Test that ignore_user_permissions works correctly in search_link

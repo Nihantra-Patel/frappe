@@ -175,6 +175,8 @@ def search_widget(
 		if meta.search_fields:
 			search_fields.extend(meta.get_search_fields())
 
+		search_fields = list(dict.fromkeys(search_fields))
+
 		for f in search_fields:
 			fmeta = meta.get_field(f.strip())
 			if not meta.translated_doctype and (f == "name" or (fmeta and fmeta.fieldtype in field_types)):
