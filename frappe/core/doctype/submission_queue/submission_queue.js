@@ -11,7 +11,7 @@ frappe.ui.form.on("Submission Queue", {
 					Doing this could unlock other submissions of this document which are in queue (if present)
 					and could lead to non-ideal conditions.`,
 					() => {
-						frm.call("unlock_doc");
+						frm.call("unlock_doc").then(() => frm.reload_doc());
 					}
 				);
 			});

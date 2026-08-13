@@ -78,21 +78,43 @@ class RQJob(Document):
 		return self._job_obj
 
 	@staticmethod
-	def get_list(filters=None, start=0, page_length=20, order_by="creation desc"):
-		matched_job_ids = RQJob.get_matching_job_ids(filters=filters)[start : start + page_length]
+	def get_list(
+		filters=None, start=0, page_length=20, order_by="creation desc", fields=None, as_list=False, **kwargs
+	):
+		matched_job_ids = RQJob.get_matching_job_ids(filters=filters)
 
 		conn = get_redis_conn()
+		# Some matched ids may no longer exist in Redis (result TTL expiry, stale
+		# registry entries, etc). Fetch first and drop the dead ones before
+		# slicing, otherwise a page can come back shorter than page_length even
+		# though get_count() reports more matches are available.
 		jobs = [serialize_job(job) for job in Job.fetch_many(job_ids=matched_job_ids, connection=conn) if job]
 
 		order_desc = "desc" in order_by
-		return sorted(jobs, key=lambda j: j.creation, reverse=order_desc)
+		jobs = sorted(jobs, key=lambda j: j.creation, reverse=order_desc)
+		jobs = jobs[start : start + page_length]
+
+		if as_list:
+			# Callers like frappe.desk.search.search_widget (used for the "ID" link
+			# search box) request as_list=True and expect each row to be a
+			# subscriptable sequence of `fields`, not a dict. `fields` may also
+			# contain non-string entries (e.g. a computed "_relevance" SQL
+			# expression dict for real doctypes) that don't apply to us; those
+			# just come back as None.
+			fields = fields or ["name"]
+			return [[job.get(f) if isinstance(f, str) else None for f in fields] for job in jobs]
+
+		return jobs
 
 	@staticmethod
 	def get_matching_job_ids(filters) -> list[str]:
 		filters = make_filter_dict(filters or [])
 
 		queues = _eval_filters(filters.get("queue"), QUEUES + get_custom_queues())
-		statuses = _eval_filters(filters.get("status"), JOB_STATUSES)
+		status_filter = filters.get("status")
+		statuses = _eval_filters(status_filter, JOB_STATUSES)
+		job_name_filter = filters.get("job_name")
+		name_filter = filters.get("name")
 
 		matched_job_ids = []
 		for queue in get_queues():
@@ -105,7 +127,22 @@ class RQJob(Document):
 			for status in statuses:
 				matched_job_ids.extend(fetch_job_ids(queue, status))
 
-		return filter_current_site_jobs(matched_job_ids)
+		matched_job_ids = filter_current_site_jobs(matched_job_ids)
+
+		if name_filter:
+			operator, operand = name_filter
+			matched_job_ids = [j for j in matched_job_ids if compare(j, operator, operand)]
+
+		if job_name_filter:
+			matched_job_ids = filter_job_ids_by_field(matched_job_ids, job_name_filter, get_job_name)
+
+		if status_filter:
+			# A job can move to a different status between the registry scan above and
+			# now (e.g. failed -> finished on retry), so re-check its live status too;
+			# otherwise the list can show jobs that no longer match the status filter.
+			matched_job_ids = filter_job_ids_by_field(matched_job_ids, status_filter, get_job_status)
+
+		return matched_job_ids
 
 	@check_permissions
 	def delete(self):
@@ -200,6 +237,32 @@ def _eval_filters(filter, values: list[str]) -> list[str]:
 		operator, operand = filter
 		return [val for val in values if compare(val, operator, operand)]
 	return values
+
+
+def get_job_name(job: Job) -> str:
+	return serialize_job(job).job_name
+
+
+def get_job_status(job: Job) -> str | None:
+	try:
+		return job.get_status(refresh=True)
+	except InvalidJobOperation:
+		return None
+
+
+def filter_job_ids_by_field(job_ids: list[str], field_filter, get_field_value) -> list[str]:
+	operator, operand = field_filter
+
+	conn = get_redis_conn()
+	matched_ids = []
+	for job in Job.fetch_many(job_ids=job_ids, connection=conn):
+		if not job:
+			continue
+		value = get_field_value(job)
+		if value is not None and compare(value, operator, operand):
+			matched_ids.append(job.id)
+
+	return matched_ids
 
 
 def fetch_job_ids(queue: Queue, status: str) -> list[str]:
