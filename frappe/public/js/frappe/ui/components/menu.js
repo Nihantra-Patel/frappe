@@ -1,4 +1,4 @@
-import { validated, safe_href } from "./utils.js";
+import { validated, safe_href, shortcut_keys } from "./utils.js";
 import { place } from "./position.js";
 
 /**
@@ -43,6 +43,7 @@ import { place } from "./position.js";
  * @property {function} [onclick] Called with the click event. The menu closes after.
  * @property {string} [href] Renders the row as a link. Code-running schemes are refused.
  * @property {function} [condition] Checked on every open; return false to hide the row.
+ * @property {string} [css_class] Extra classes on the row element (responsive visibility hooks like visible-xs).
  * @property {MenuItem[]|function} [submenu] Nested rows — the row opens a side panel instead of acting. A function runs at hover-start (once per menu open, result cached) and may return the rows or a Promise of them; the panel shows a loading state until it settles.
  */
 
@@ -134,25 +135,6 @@ function icon_html(name, svg_class, component) {
 	return frappe.utils.icon(name, "sm", "", "", svg_class, true);
 }
 
-// same OS mapping as frappe.ui.keys.get_shortcut_label, but per key — that
-// util returns one joined string ("⌘P") and we render one <kbd> per key
-const MAC_KEY_SYMBOLS = { ctrl: "⌘", meta: "⌘", cmd: "⌘", alt: "⌥", shift: "⇧" };
-
-function shortcut_keys(shortcut) {
-	if (Array.isArray(shortcut)) return shortcut.map(String);
-	const mac = frappe.utils.is_mac && frappe.utils.is_mac();
-	return String(shortcut)
-		.split("+")
-		.map((key) => key.trim())
-		.filter(Boolean)
-		.map((key) => {
-			if (mac && MAC_KEY_SYMBOLS[key.toLowerCase()]) {
-				return MAC_KEY_SYMBOLS[key.toLowerCase()];
-			}
-			return frappe.utils.to_title_case(key);
-		});
-}
-
 // Underline the first free a-z letter of the label so Alt+letter can activate
 // the row (skipping letters earlier rows in the same panel already took).
 // Built from text nodes + a span, never innerHTML, so labels still can't
@@ -183,6 +165,7 @@ function build_item(item, { reserve_icon_space, component, taken }) {
 	const href = item.submenu || item.disabled ? null : safe_href(item.href, component);
 	const el = document.createElement(href ? "a" : "button");
 	el.className = "es-menu__item";
+	if (item.css_class) el.className += ` ${item.css_class}`;
 	el.setAttribute("role", "menuitem");
 	el.setAttribute("tabindex", "-1");
 	if (href) el.href = href;
@@ -210,9 +193,11 @@ function build_item(item, { reserve_icon_space, component, taken }) {
 	const label = document.createElement("span");
 	label.className = "es-menu__label";
 	const label_text = item.label || "";
-	// disabled rows can't be activated, so they get no mnemonic
+	// disabled rows can't be activated, so they get no mnemonic; rows with
+	// an accelerator keep it as their only key path (the legacy desk rule —
+	// it also leaves the letter pool for shortcut-less rows)
 	let mnemonic = null;
-	if (taken && label_text && !item.disabled) {
+	if (taken && label_text && !item.disabled && !item.shortcut) {
 		mnemonic = assign_mnemonic(label, label_text, taken);
 	} else {
 		label.textContent = label_text;

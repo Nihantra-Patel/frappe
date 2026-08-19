@@ -83,7 +83,7 @@ context("Kanban Board", () => {
 		cy.click_listview_primary_button("Add ToDo");
 
 		cy.fill_field("description", "Test Kanban ToDo", "Text Editor").wait(300);
-		cy.get(".modal-footer .btn-primary").last().click();
+		cy.get(".modal-footer .btn-modal-primary").last().click();
 
 		cy.wait("@save-todo");
 	});
@@ -180,6 +180,32 @@ context("Kanban Board", () => {
 		visit_todo_kanban();
 		cy.get('.kanban-column[data-column-value="Open"] .kanban-cards').as("open-cards");
 		cy.get("@open-cards").find(".kanban-card .kanban-card-doc").should("not.contain", "ID:");
+	});
+
+	it("Shows fieldtype icons when labels are hidden", () => {
+		cy.call("frappe.desk.doctype.kanban_board.kanban_board.save_settings", {
+			board_name: "ToDo Kanban",
+			settings: { fields: ["status", "priority"], show_labels: 0 },
+		});
+
+		visit_todo_kanban();
+		cy.get('.kanban-column[data-column-value="Open"] .kanban-cards').as("open-cards");
+		cy.get("@open-cards")
+			.find(".kanban-card .kanban-card-doc")
+			.first()
+			.as("card-doc")
+			.should("not.contain", "Status:")
+			.and("not.contain", "Priority:");
+		cy.get("@card-doc")
+			.find(".kanban-doc-icon")
+			.should("have.length.at.least", 1)
+			.first()
+			.should("have.attr", "title")
+			.and("not.be.empty");
+		cy.get("@card-doc")
+			.find(".kanban-doc-icon")
+			.first()
+			.should("have.attr", "title", "Status");
 	});
 
 	const test_column_page_prefetch = () => {

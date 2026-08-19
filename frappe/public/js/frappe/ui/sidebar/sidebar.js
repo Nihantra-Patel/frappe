@@ -110,7 +110,7 @@ frappe.ui.Sidebar = class Sidebar {
 
 	setup_promotional_banners() {
 		if (
-			cint(frappe.sys_defaults?.disable_product_suggestion) ||
+			frappe.defaults.is_enabled("disable_product_suggestion") ||
 			!frappe.user.has_role("System Manager")
 		)
 			return;
@@ -419,7 +419,7 @@ frappe.ui.Sidebar = class Sidebar {
 	// unless the route actually warrants a different sidebar.
 	refresh() {
 		this.apply_page_visibility();
-		if (!this.page_allows_sidebar()) return;
+		if (!this.page_allows_sidebar() && !this.page_allows_dock()) return;
 		// Re-resolve the app context now that the routed doctype's meta is loaded. On a cold/direct
 		// load the router `change` handler ran before the meta was available, so set_current_app()
 		// couldn't derive the app (leaving current_app -- and thus the dock -- unresolved). This
@@ -449,12 +449,13 @@ frappe.ui.Sidebar = class Sidebar {
 		return !!page && !page.hide_sidebar;
 	}
 
-	// The dock is displayed unless the page hides the whole sidebar (`hide_sidebar`, e.g. the
-	// desktop/apps screen) or opts out of just the dock with `hide_workspace_dock` -- both are
-	// standard frappe.ui.Page options, so this is configurable per page.
+	// The dock is displayed unless the page opts out with `hide_workspace_dock` -- both that and
+	// `hide_sidebar` are standard frappe.ui.Page options, and a page picks either shell on its
+	// own: the print format builder keeps the dock while hiding the body sidebar, the
+	// desktop/apps screen sets both.
 	page_allows_dock() {
 		const page = this.current_page();
-		return !!page && !page.hide_sidebar && !page.hide_workspace_dock;
+		return !!page && !page.hide_workspace_dock;
 	}
 
 	// Resolve both shells against the current page's options. This is the one place that turns
@@ -552,6 +553,14 @@ frappe.ui.Sidebar = class Sidebar {
 					icon: "monitor",
 					onClick: function () {
 						new frappe.ui.DockManager();
+					},
+				},
+				{
+					name: "reload",
+					label: __("Reload"),
+					icon: "rotate-ccw",
+					onClick: function () {
+						frappe.ui.toolbar.clear_cache();
 					},
 				},
 				...frappe.boot.navbar_settings.settings_dropdown.map((item) => ({
@@ -758,7 +767,7 @@ frappe.ui.Sidebar = class Sidebar {
 	}
 	setup_notifications() {
 		if (frappe.boot.desk_settings.notifications && frappe.session.user !== "Guest") {
-			this.notifications = new frappe.ui.Notifications({ full_height: true });
+			this.notifications = new frappe.ui.Notifications();
 		}
 	}
 	setup_background_tasks() {
@@ -964,7 +973,8 @@ frappe.ui.Sidebar = class Sidebar {
 	// Switch the sidebar to `name` and navigate to its first item (falling back to the
 	// workspace page). Shared by the header switcher and global search.
 	open_workspace(name) {
-		if (frappe.boot.workspace_sidebar_item[(name || "").toLowerCase()]) {
+		let sidebar = frappe.boot.workspace_sidebar_item[(name || "").toLowerCase()];
+		if (sidebar) {
 			this.select_sidebar(name);
 		}
 
@@ -973,6 +983,10 @@ frappe.ui.Sidebar = class Sidebar {
 			frappe.set_route(route);
 			return;
 		}
+
+		// A module sidebar (see get_app_module_sidebars) is not a workspace and has no page of its
+		// own: it's reachable only through its items, so selecting it is the whole switch.
+		if (sidebar && sidebar.from_module) return;
 
 		// No sidebar items to land on -> the workspace's own page. Route by path (as the workspace
 		// view itself does) rather than as a ["Workspaces", slug] standard route: the path form is
@@ -997,6 +1011,9 @@ frappe.ui.Sidebar = class Sidebar {
 	// workspace that isn't mounted to any app is deliberately on no dock; it stays reachable
 	// through global search and Manage Workspaces until someone mounts it.
 	//
+	// An app that ships no workspaces at all is navigated by module instead -- the set is then its
+	// module sidebars (see get_app_module_sidebars) and the dock becomes a module dock.
+	//
 	// `app` defaults to the route's current app (used by the header dropdown); the dock passes the
 	// shown sidebar's app so it lists that app's workspaces.
 	collect_selector_workspaces(app = frappe.current_app) {
@@ -1014,7 +1031,50 @@ frappe.ui.Sidebar = class Sidebar {
 			if (scoped.length) names = scoped;
 		}
 
-		return names.map((name) => frappe.workspaces[frappe.router.slug(name)]).filter(Boolean);
+		let workspaces = names
+			.map((name) => frappe.workspaces[frappe.router.slug(name)])
+			.filter(Boolean);
+
+		return workspaces.length ? workspaces : this.get_app_module_sidebars(app);
+	}
+
+	// The module sidebars an app navigates by when it owns no workspaces, shaped like workspaces
+	// so the dock and the header dropdown can render them unchanged. Empty for every other app.
+	//
+	// Shipping no workspace at all is a normal shape for an app in the ecosystem -- one that only
+	// adds a few doctypes has nothing to author a workspace for. Every module still gets a sidebar
+	// generated for it (`from_module` in the boot payload, listing the module's doctypes, reports,
+	// dashboards and pages), so the dock lists the app's modules and picking one opens that
+	// module's sidebar.
+	//
+	// Access needs no work here: the payload only carries a module's sidebar when the module isn't
+	// blocked for the user (see `get_sidebar_items`) and at least one item in it is visible to
+	// them, so anything left to list is something they may open.
+	get_app_module_sidebars(app) {
+		if (!app || (app.workspaces || []).length) return [];
+
+		return (app.modules || [])
+			.map((module) => frappe.boot.workspace_sidebar_item[module.toLowerCase()])
+			.filter((sidebar) => sidebar && sidebar.from_module)
+			.map((sidebar) => ({
+				name: sidebar.label,
+				title: sidebar.label,
+				// marks the entry as a module rather than a workspace: it has no page of its own
+				// to route to, and no icon either -- the dock renders a letter icon for it, the
+				// same one the sidebar header shows for a module sidebar
+				from_module: 1,
+			}));
+	}
+
+	// Where an app's icon leads. `app_route` covers apps that declare a route or ship a workspace;
+	// one that does neither is navigated by module, so land on the first item of its first module
+	// sidebar -- where the module dock's first entry goes.
+	app_landing_route(app) {
+		if (!app) return null;
+		if (app.app_route) return app.app_route;
+
+		let [module] = this.get_app_module_sidebars(app);
+		return module ? this.get_first_sidebar_route(module.name) : null;
 	}
 
 	// Menu items for the header dropdown selector: every selector workspace except the active one.
@@ -1057,8 +1117,11 @@ frappe.ui.Sidebar = class Sidebar {
 		return this.get_first_sidebar_route(workspace.name || workspace.title);
 	}
 
-	// The workspace's own desk route -- used when it has no sidebar items to land on.
+	// The workspace's own desk route -- used when it has no sidebar items to land on. A module
+	// sidebar has no such page (see get_app_module_sidebars), so it has nothing to fall back to.
 	workspace_route(workspace) {
+		if (workspace.from_module) return null;
+
 		let slug = frappe.router.slug(workspace.name || workspace.title);
 		return `/desk/${workspace.public ? slug : "private/" + slug}`;
 	}

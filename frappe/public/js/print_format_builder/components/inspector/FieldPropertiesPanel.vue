@@ -15,6 +15,19 @@
 					{{ __("Edit HTML") }}
 				</button>
 			</template>
+			<template v-else-if="is_typst_field">
+				<textarea
+					class="form-control form-control-sm pfb-typst-input"
+					:placeholder="'#text(weight: \'bold\')[Hello]'"
+					spellcheck="false"
+					rows="8"
+					:value="selected_field.typst || ''"
+					@input="(e) => (selected_field.typst = e.target.value)"
+				></textarea>
+				<div class="pfb-insp-hint text-muted">
+					{{ typst_hint }}
+				</div>
+			</template>
 			<template v-else-if="is_image_element">
 				<ImageUploadControl
 					:model-value="selected_field.image_url"
@@ -110,6 +123,19 @@
 					@update:model-value="(v) => (selected_field.align = v)"
 				/>
 			</template>
+			<template v-else-if="is_spacer">
+				<StepperRow
+					:label="__('Height')"
+					:model-value="selected_field.height"
+					:base="16"
+					:step="4"
+					unit="px"
+					:placeholder="__('auto')"
+					allow-empty
+					@update:model-value="(v) => (selected_field.height = v)"
+				/>
+			</template>
+			<template v-else-if="is_divider"></template>
 			<template v-else>
 				<LabelField
 					v-model="selected_field.label"
@@ -150,6 +176,12 @@
 					allow-empty
 					@update:model-value="(v) => (selected_field.label_gap = v)"
 				/>
+				<ToggleRow
+					v-if="can_break"
+					:label="__('Split across pages')"
+					:model-value="!!selected_field.allow_page_break"
+					@update:model-value="(v) => (selected_field.allow_page_break = v)"
+				/>
 			</template>
 		</InspectorSection>
 
@@ -159,26 +191,12 @@
 					:label="__('Label')"
 					:model-value="selected_field.label_color || ''"
 					@update:model-value="(v) => set_field_prop('label_color', v)"
-				>
-					<ToggleButton
-						label="B"
-						:title="__('Bold label')"
-						:model-value="!!selected_field.label_bold"
-						@update:model-value="(v) => set_field_prop('label_bold', v)"
-					/>
-				</ColorField>
+				/>
 				<ColorField
 					:label="__('Value')"
 					:model-value="selected_field.value_color || ''"
 					@update:model-value="(v) => set_field_prop('value_color', v)"
-				>
-					<ToggleButton
-						label="B"
-						:title="__('Bold value')"
-						:model-value="!!selected_field.value_bold"
-						@update:model-value="(v) => set_field_prop('value_bold', v)"
-					/>
-				</ColorField>
+				/>
 			</div>
 			<StyleSection :label="__('Custom CSS')" v-model="selected_field.custom_style" />
 		</InspectorSection>
@@ -193,11 +211,11 @@
 import { computed, inject } from "vue";
 import LabelField from "./LabelField.vue";
 import SegmentedRow from "./SegmentedRow.vue";
+import ToggleRow from "./ToggleRow.vue";
 import InspectorSection from "./InspectorSection.vue";
 import StepperRow from "./StepperRow.vue";
 import StyleSection from "./StyleSection.vue";
 import ColorField from "./ColorField.vue";
-import ToggleButton from "./ToggleButton.vue";
 import VisibilitySection from "./VisibilitySection.vue";
 import ImageUploadControl from "./ImageUploadControl.vue";
 import { get_image_dimensions } from "../../utils";
@@ -219,7 +237,27 @@ const NON_TEXT_FIELDTYPES = new Set([
 ]);
 let is_text_field = computed(() => !NON_TEXT_FIELDTYPES.has(selected_field.value?.fieldtype));
 
+// Long-content fields that render through Data.html and can safely flow across
+// a page boundary instead of jumping whole
+const BREAKABLE_FIELDTYPES = new Set([
+	"Text Editor",
+	"Text",
+	"Long Text",
+	"Small Text",
+	"Code",
+	"HTML Editor",
+]);
+let can_break = computed(() => BREAKABLE_FIELDTYPES.has(selected_field.value?.fieldtype));
+
 let is_html_field = computed(() => selected_field.value?.fieldtype === "HTML");
+let is_typst_field = computed(() => selected_field.value?.fieldtype === "Typst");
+let typst_hint = __(
+	"Write Typst here. Use {0} for values from the document. Check the PDF preview to see the result.",
+	["{{ doc.field_name }}"]
+);
+// a spacer prints a gap and a divider a rule — neither carries a label to align
+let is_spacer = computed(() => selected_field.value?.fieldtype === "Spacer");
+let is_divider = computed(() => selected_field.value?.fieldtype === "Divider");
 let is_image_element = computed(
 	() => selected_field.value?.fieldtype === "Image" && selected_field.value?.custom
 );
@@ -260,11 +298,13 @@ function set_image_url(url) {
 		selected_field.value.width = "";
 		return;
 	}
-	get_image_dimensions(url).then(({ width }) => {
-		if (!parseFloat(selected_field.value.width)) {
-			selected_field.value.width = Math.min(width, 300) + "px";
-		}
-	});
+	get_image_dimensions(url)
+		.then(({ width }) => {
+			if (!parseFloat(selected_field.value.width)) {
+				selected_field.value.width = Math.min(width, 300) + "px";
+			}
+		})
+		.catch(() => {});
 }
 
 let current_align = computed(() => selected_field.value?.align ?? "left");
